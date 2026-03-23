@@ -8,7 +8,7 @@ from typing import Any
 import nextcord
 from nextcord.ext import commands
 
-from config import EMBED_COLOR, Settings
+from config import ACTION_LOG_CHANNEL_ID, EMBED_COLOR, Settings
 from db import Database
 from utils.time import format_timedelta, to_iso, utcnow
 from utils.ui import build_embed, safe_dm
@@ -152,10 +152,15 @@ class MemactAutoModBot(commands.Bot):
         if not self.is_allowed_guild_id(guild.id):
             return
         config = self.db.get_guild_config(guild.id)
-        channel_id = config["log_channel_id"]
+        channel_id = ACTION_LOG_CHANNEL_ID
+        channel = guild.get_channel(channel_id)
+        if channel is None:
+            channel_id = config["log_channel_id"]
+            if not channel_id:
+                return
+            channel = guild.get_channel(channel_id)
         if not channel_id:
             return
-        channel = guild.get_channel(channel_id)
         if channel is None:
             return
         embed = build_embed(title, description, fields=fields)
