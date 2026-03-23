@@ -13,7 +13,11 @@ class ConfigurationCog(commands.Cog):
     def __init__(self, bot: MemactAutoModBot) -> None:
         self.bot = bot
 
-    @nextcord.slash_command(description="Configure Memact AutoMod", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Configure Memact AutoMod",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_guild=True),
+    )
     async def config(self, interaction: nextcord.Interaction) -> None:
         pass
 

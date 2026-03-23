@@ -34,7 +34,11 @@ class ModerationCog(commands.Cog):
             return False
         return True
 
-    @nextcord.slash_command(description="Moderation commands", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Moderation commands",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_messages=True),
+    )
     async def mod(self, interaction: nextcord.Interaction) -> None:
         pass
 
@@ -518,7 +522,11 @@ class ModerationCog(commands.Cog):
         await self.bot.send_log(interaction.guild, title="Channel Unlocked", description=f"{target_channel.mention} was unlocked.", fields=[("Case", str(case_id), True), ("Moderator", moderator.mention, True)])
         await send_interaction(interaction, embed=build_embed("Channel Unlocked", f"Unlocked {target_channel.mention}.", fields=[("Case", str(case_id), True)]))
 
-    @nextcord.slash_command(description="Role management commands", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Role management commands",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_messages=True),
+    )
     async def role(self, interaction: nextcord.Interaction) -> None:
         pass
 
@@ -609,7 +617,11 @@ class ModerationCog(commands.Cog):
         description = "\n".join(roles) if roles else "No extra roles."
         await send_interaction(interaction, embed=build_embed(f"Roles for {member}", description))
 
-    @nextcord.slash_command(description="Channel management commands", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Channel management commands",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_messages=True),
+    )
     async def channel(self, interaction: nextcord.Interaction) -> None:
         pass
 
@@ -665,7 +677,11 @@ class ModerationCog(commands.Cog):
         await self.bot.send_log(interaction.guild, title="Channel Deleted", description=f"Deleted `{channel_name}`.", fields=[("Case", str(case_id), True), ("Moderator", moderator.mention, True)])
         await send_interaction(interaction, embed=build_embed("Channel Deleted", f"Deleted `{channel_name}`.", fields=[("Case", str(case_id), True)]))
 
-    @nextcord.slash_command(description="Case history commands", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Case history commands",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_messages=True),
+    )
     async def case(self, interaction: nextcord.Interaction) -> None:
         pass
 

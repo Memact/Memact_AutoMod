@@ -13,7 +13,11 @@ class CommunityCog(commands.Cog):
     def __init__(self, bot: MemactAutoModBot) -> None:
         self.bot = bot
 
-    @nextcord.slash_command(description="Staff queue commands for reports and appeals", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Staff queue commands for reports and appeals",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_messages=True),
+    )
     async def queue(self, interaction: nextcord.Interaction) -> None:
         pass
 

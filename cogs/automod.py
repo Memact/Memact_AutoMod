@@ -9,7 +9,7 @@ import nextcord
 from nextcord.ext import commands
 
 from bot import MemactAutoModBot
-from config import COMMAND_GUILD_IDS
+from config import BOT_JOIN_ROLE_ID, COMMAND_GUILD_IDS, MEMBER_JOIN_ROLE_ID
 from utils.checks import is_moderator_member, require_admin
 from utils.blocklist import DATASET_PRESETS, compile_blocked_term_pattern, fetch_dataset_terms_sync
 from utils.ui import build_embed, send_interaction
@@ -64,6 +64,21 @@ class AutomodCog(commands.Cog):
         key = (guild_id, user_id)
         self.spam_history.pop(key, None)
         self.repeat_history.pop(key, None)
+
+    async def _assign_join_role(self, member: nextcord.Member, role_id: int) -> None:
+        role = member.guild.get_role(role_id)
+        if role is None:
+            print(f"Join role {role_id} was not found in guild {member.guild.id}.")
+            return
+        if role in member.roles:
+            return
+        try:
+            await member.add_roles(role, reason="Automatic join role assignment.")
+        except (nextcord.Forbidden, nextcord.HTTPException) as error:
+            print(
+                f"Failed to assign join role {role_id} to user {member.id} "
+                f"in guild {member.guild.id}: {type(error).__name__}: {error}"
+            )
 
     async def _handle_violation(
         self,
@@ -215,14 +230,20 @@ class AutomodCog(commands.Cog):
     async def on_member_join(self, member: nextcord.Member) -> None:
         if not self.bot.is_allowed_guild_id(member.guild.id):
             return
+        if member.bot:
+            await self._assign_join_role(member, BOT_JOIN_ROLE_ID)
+            return
+
         config = self.bot.db.get_guild_config(member.guild.id)
         if not config["raid_mode"] and config["min_account_age_hours"] <= 0:
+            await self._assign_join_role(member, MEMBER_JOIN_ROLE_ID)
             return
 
         required_hours = max(config["min_account_age_hours"], 72 if config["raid_mode"] else 0)
         age = nextcord.utils.utcnow() - member.created_at
         age_hours = age.total_seconds() / 3600
         if age_hours >= required_hours:
+            await self._assign_join_role(member, MEMBER_JOIN_ROLE_ID)
             return
 
         reason = f"Account younger than required minimum of {required_hours} hours."
@@ -253,7 +274,11 @@ class AutomodCog(commands.Cog):
             self.repeat_history.pop(key, None)
         self.blocked_word_cache.pop(guild.id, None)
 
-    @nextcord.slash_command(description="Automod configuration commands", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Automod configuration commands",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_guild=True),
+    )
     async def automod(self, interaction: nextcord.Interaction) -> None:
         pass
 

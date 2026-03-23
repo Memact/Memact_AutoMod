@@ -23,7 +23,11 @@ class RulesCog(commands.Cog):
         description = "\n\n".join(lines) if lines else "No rules configured yet."
         return build_embed(f"{guild.name} Server Rules", description, footer="Please read and follow these rules.")
 
-    @nextcord.slash_command(description="Manage and post server rules", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Manage and post server rules",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_guild=True),
+    )
     async def rules(self, interaction: nextcord.Interaction) -> None:
         pass
 

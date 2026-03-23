@@ -7,6 +7,8 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent
 EMBED_COLOR = 0x00011B
+BOT_JOIN_ROLE_ID = 1485762440980336810
+MEMBER_JOIN_ROLE_ID = 1485762960851996822
 
 DEFAULT_RULES = [
     ("Be respectful", "No harassment, hate speech, targeted insults, or personal attacks.", 2),

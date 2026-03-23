@@ -31,7 +31,11 @@ class EmbedToolsCog(commands.Cog):
             embed.set_thumbnail(url=thumbnail_url)
         return embed
 
-    @nextcord.slash_command(description="Create and send embeds", guild_ids=COMMAND_GUILD_IDS)
+    @nextcord.slash_command(
+        description="Create and send embeds",
+        guild_ids=COMMAND_GUILD_IDS,
+        default_member_permissions=nextcord.Permissions(manage_messages=True),
+    )
     async def embed(self, interaction: nextcord.Interaction) -> None:
         pass
 
