@@ -89,12 +89,8 @@ class AutomodCog(commands.Cog):
         )
 
     async def _send_welcome_dm(self, member: nextcord.Member, embed: nextcord.Embed) -> None:
-        dm_content = (
-            f"Welcome to **{member.guild.name}**.\n"
-            f"Please post your intro in the channel <#{INTRO_CHANNEL_ID}> so everyone can get to know you."
-        )
         try:
-            await member.send(content=dm_content, embed=embed)
+            await member.send(embed=embed)
             return
         except (nextcord.Forbidden, nextcord.HTTPException) as error:
             print(
