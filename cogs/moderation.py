@@ -7,7 +7,7 @@ from nextcord.ext import commands
 
 from bot import MemactAutoModBot
 from config import COMMAND_GUILD_IDS
-from utils.checks import require_moderator
+from utils.checks import is_moderator_member, require_moderator
 from utils.time import format_timedelta, parse_duration, to_iso, utcnow
 from utils.ui import build_embed, send_interaction
 
@@ -47,6 +47,13 @@ class ModerationCog(commands.Cog):
     ) -> None:
         moderator = await require_moderator(interaction)
         if moderator is None or not await self._require_target(interaction, member):
+            return
+        if not member.kickable:
+            await send_interaction(
+                interaction,
+                content="I can't kick that member. Check my role position and permissions.",
+                ephemeral=True,
+            )
             return
         await member.kick(reason=reason)
         case_id = await self.bot.add_case(interaction.guild.id, member.id, moderator.id, "kick", reason)
@@ -124,8 +131,19 @@ class ModerationCog(commands.Cog):
         moderator = await require_moderator(interaction)
         if moderator is None:
             return
-        user = await self.bot.fetch_user(user_id)
-        await interaction.guild.unban(user, reason=reason)
+        try:
+            user = await self.bot.fetch_user(user_id)
+        except nextcord.NotFound:
+            await send_interaction(interaction, content="That user ID does not exist on Discord.", ephemeral=True)
+            return
+        except nextcord.HTTPException:
+            await send_interaction(interaction, content="I couldn't look up that user ID right now.", ephemeral=True)
+            return
+        try:
+            await interaction.guild.unban(user, reason=reason)
+        except nextcord.NotFound:
+            await send_interaction(interaction, content="That user is not currently banned.", ephemeral=True)
+            return
         case_id = await self.bot.add_case(interaction.guild.id, user.id, moderator.id, "unban", reason)
         await self.bot.send_log(
             interaction.guild,
@@ -327,6 +345,90 @@ class ModerationCog(commands.Cog):
             ],
         )
         await interaction.followup.send(embed=build_embed("Purge Complete", f"Deleted `{len(deleted)}` messages.", fields=[("Case", str(case_id), True)]), ephemeral=True)
+
+    @mod.subcommand(description="Preview or kick members who joined recently during a raid")
+    async def raid_cleanup(
+        self,
+        interaction: nextcord.Interaction,
+        joined_within_minutes: int = nextcord.SlashOption(required=False, default=60, min_value=1, max_value=1440),
+        dry_run: bool = nextcord.SlashOption(required=False, default=True),
+        reason: str = nextcord.SlashOption(required=False, default="Raid cleanup."),
+    ) -> None:
+        moderator = await require_moderator(interaction)
+        if moderator is None:
+            return
+        cutoff = utcnow() - timedelta(minutes=joined_within_minutes)
+        config = self.bot.db.get_guild_config(interaction.guild.id)
+        candidates: list[nextcord.Member] = []
+        for member in interaction.guild.members:
+            if member.bot or member == interaction.guild.owner:
+                continue
+            if member.joined_at is None or member.joined_at < cutoff:
+                continue
+            if is_moderator_member(member, config):
+                continue
+            if not await self._can_touch(moderator, member):
+                continue
+            candidates.append(member)
+
+        if not candidates:
+            await send_interaction(interaction, embed=build_embed("Raid Cleanup", "No eligible members matched that join window."))
+            return
+
+        if dry_run:
+            preview = "\n".join(f"{member.mention} | joined {member.joined_at.isoformat()}" for member in candidates[:10])
+            more = "" if len(candidates) <= 10 else f"\n...and {len(candidates) - 10} more."
+            await send_interaction(
+                interaction,
+                embed=build_embed(
+                    "Raid Cleanup Preview",
+                    f"`{len(candidates)}` members joined within the last `{joined_within_minutes}` minutes and are eligible for cleanup.\n\n{preview}{more}",
+                ),
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        kicked = 0
+        failed = 0
+        for member in candidates:
+            if not member.kickable:
+                failed += 1
+                continue
+            try:
+                await member.kick(reason=reason)
+                kicked += 1
+            except (nextcord.Forbidden, nextcord.HTTPException):
+                failed += 1
+
+        case_id = await self.bot.add_case(
+            interaction.guild.id,
+            moderator.id,
+            moderator.id,
+            "raid_cleanup",
+            reason,
+            active=False,
+            metadata={"cutoff_minutes": joined_within_minutes, "kicked": kicked, "failed": failed},
+        )
+        await self.bot.send_log(
+            interaction.guild,
+            title="Raid Cleanup Executed",
+            description=f"{moderator.mention} ran raid cleanup.",
+            fields=[
+                ("Case", str(case_id), True),
+                ("Window", f"{joined_within_minutes} minutes", True),
+                ("Kicked", str(kicked), True),
+                ("Failed", str(failed), True),
+                ("Reason", reason, False),
+            ],
+        )
+        await interaction.followup.send(
+            embed=build_embed(
+                "Raid Cleanup Complete",
+                f"Kicked `{kicked}` members from the last `{joined_within_minutes}` minutes. `{failed}` could not be kicked.",
+                fields=[("Case", str(case_id), True)],
+            ),
+            ephemeral=True,
+        )
 
     @mod.subcommand(description="Set slowmode on a channel")
     async def slowmode(
@@ -615,6 +717,63 @@ class ModerationCog(commands.Cog):
             state = "active" if item["active"] else "inactive"
             lines.append(f"#{item['id']} | {item['action']} | {item['reason']} | {state}")
         await send_interaction(interaction, embed=build_embed(f"Case History for {member}", "\n".join(lines)))
+
+    @case.subcommand(description="Search cases by action, member, and recent time window")
+    async def search(
+        self,
+        interaction: nextcord.Interaction,
+        action: str = nextcord.SlashOption(
+            required=False,
+            default="all",
+            choices={
+                "Any": "all",
+                "Warn": "warn",
+                "Kick": "kick",
+                "Ban": "ban",
+                "Unban": "unban",
+                "Timeout": "timeout",
+                "Untimeout": "untimeout",
+                "Purge": "purge",
+                "Note": "note",
+                "Raid Cleanup": "raid_cleanup",
+            },
+        ),
+        member: Optional[nextcord.Member] = nextcord.SlashOption(required=False),
+        days_back: int = nextcord.SlashOption(required=False, default=30, min_value=1, max_value=3650),
+        limit: int = nextcord.SlashOption(required=False, default=10, min_value=1, max_value=25),
+    ) -> None:
+        moderator = await require_moderator(interaction)
+        if moderator is None:
+            return
+        created_after = to_iso(utcnow() - timedelta(days=days_back))
+        cases = self.bot.db.search_cases(
+            interaction.guild.id,
+            user_id=member.id if member is not None else None,
+            action=None if action == "all" else action,
+            created_after=created_after,
+            limit=limit,
+        )
+        if not cases:
+            await send_interaction(interaction, embed=build_embed("Case Search", "No cases matched that search."))
+            return
+        lines = []
+        for item in cases:
+            state = "active" if item["active"] else "inactive"
+            lines.append(
+                f"#{item['id']} | user `{item['user_id']}` | {item['action']} | {item['created_at']} | {state}"
+            )
+        await send_interaction(
+            interaction,
+            embed=build_embed(
+                "Case Search Results",
+                "\n".join(lines),
+                fields=[
+                    ("Action", action, True),
+                    ("Member", member.mention if member is not None else "Any", True),
+                    ("Window", f"Last {days_back} days", True),
+                ],
+            ),
+        )
 
 
 def setup(bot: MemactAutoModBot) -> None:

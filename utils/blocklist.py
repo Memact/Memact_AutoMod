@@ -62,7 +62,9 @@ def compile_blocked_term_pattern(term: str) -> re.Pattern[str]:
 
 
 def fetch_dataset_terms_sync(preset: str) -> list[str]:
-    dataset = DATASET_PRESETS[preset]
+    dataset = DATASET_PRESETS.get(preset)
+    if dataset is None:
+        raise ValueError("Unknown blocked-word dataset.")
     all_terms: list[str] = []
     for url in dataset["urls"]:
         request = Request(
@@ -72,6 +74,6 @@ def fetch_dataset_terms_sync(preset: str) -> list[str]:
         with urlopen(request, timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8"))
         if not isinstance(payload, list):
-            raise ValueError(f"Dataset at {url} did not return a list of strings.")
+            raise ValueError("The blocked-word dataset returned an unexpected format.")
         all_terms.extend(str(item) for item in payload)
     return normalize_blocked_terms(all_terms)

@@ -51,7 +51,7 @@ class Database:
         self.path = str(database_path)
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._initialize()
 
     def close(self) -> None:
@@ -473,6 +473,39 @@ class Database:
             data.append(item)
         return data
 
+    def search_cases(
+        self,
+        guild_id: int,
+        *,
+        user_id: int | None = None,
+        action: str | None = None,
+        created_after: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        self.ensure_guild(guild_id)
+        query = ["SELECT * FROM cases WHERE guild_id = ?"]
+        values: list[Any] = [guild_id]
+        if user_id is not None:
+            query.append("AND user_id = ?")
+            values.append(user_id)
+        if action is not None:
+            query.append("AND action = ?")
+            values.append(action)
+        if created_after is not None:
+            query.append("AND created_at >= ?")
+            values.append(created_after)
+        query.append("ORDER BY id DESC LIMIT ?")
+        values.append(limit)
+        with self._lock:
+            rows = self.connection.execute(" ".join(query), tuple(values)).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item["metadata"])
+            item["active"] = bool(item["active"])
+            results.append(item)
+        return results
+
     def deactivate_case(self, guild_id: int, case_id: int) -> bool:
         self.ensure_guild(guild_id)
         with self._lock:
@@ -592,6 +625,48 @@ class Database:
             )
             self.connection.commit()
             return int(cursor.lastrowid)
+
+    def get_report(self, guild_id: int, report_id: int) -> dict[str, Any] | None:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT * FROM reports WHERE guild_id = ? AND id = ?",
+                (guild_id, report_id),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_reports(
+        self,
+        guild_id: int,
+        *,
+        kind: str | None = None,
+        status: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        self.ensure_guild(guild_id)
+        query = ["SELECT * FROM reports WHERE guild_id = ?"]
+        values: list[Any] = [guild_id]
+        if kind is not None:
+            query.append("AND kind = ?")
+            values.append(kind)
+        if status is not None:
+            query.append("AND status = ?")
+            values.append(status)
+        query.append("ORDER BY id DESC LIMIT ?")
+        values.append(limit)
+        with self._lock:
+            rows = self.connection.execute(" ".join(query), tuple(values)).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_report_status(self, guild_id: int, report_id: int, status: str) -> bool:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE reports SET status = ? WHERE guild_id = ? AND id = ?",
+                (status, guild_id, report_id),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
 
     def schedule_action(
         self,

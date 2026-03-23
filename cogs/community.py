@@ -5,12 +5,17 @@ from nextcord.ext import commands
 
 from bot import MemactAutoModBot
 from config import COMMAND_GUILD_IDS
+from utils.checks import require_moderator
 from utils.ui import build_embed, send_interaction
 
 
 class CommunityCog(commands.Cog):
     def __init__(self, bot: MemactAutoModBot) -> None:
         self.bot = bot
+
+    @nextcord.slash_command(description="Staff queue commands for reports and appeals", guild_ids=COMMAND_GUILD_IDS)
+    async def queue(self, interaction: nextcord.Interaction) -> None:
+        pass
 
     @nextcord.slash_command(description="Report a member to the moderators", guild_ids=COMMAND_GUILD_IDS)
     async def report(
@@ -73,6 +78,9 @@ class CommunityCog(commands.Cog):
         if case is None:
             await send_interaction(interaction, content="That case ID was not found.", ephemeral=True)
             return
+        if case["user_id"] != interaction.user.id:
+            await send_interaction(interaction, content="You can only appeal your own moderation cases.", ephemeral=True)
+            return
         channel = interaction.guild.get_channel(channel_id)
         if not isinstance(channel, nextcord.TextChannel):
             await send_interaction(interaction, content="The configured appeal channel could not be found.", ephemeral=True)
@@ -99,6 +107,106 @@ class CommunityCog(commands.Cog):
         )
         await channel.send(embed=embed)
         await send_interaction(interaction, embed=build_embed("Appeal Submitted", f"Your appeal for case #{case_id} has been sent to the moderators."))
+
+    @queue.subcommand(description="View recent report and appeal queue entries")
+    async def view(
+        self,
+        interaction: nextcord.Interaction,
+        kind: str = nextcord.SlashOption(
+            required=False,
+            default="all",
+            choices={
+                "All": "all",
+                "Reports": "report",
+                "Appeals": "appeal",
+            },
+        ),
+        status: str = nextcord.SlashOption(
+            required=False,
+            default="open",
+            choices={
+                "Open": "open",
+                "Resolved": "resolved",
+                "Closed": "closed",
+                "All": "all",
+            },
+        ),
+        limit: int = nextcord.SlashOption(required=False, default=10, min_value=1, max_value=25),
+    ) -> None:
+        moderator = await require_moderator(interaction)
+        if moderator is None:
+            return
+        entries = self.bot.db.list_reports(
+            interaction.guild.id,
+            kind=None if kind == "all" else kind,
+            status=None if status == "all" else status,
+            limit=limit,
+        )
+        if not entries:
+            await send_interaction(interaction, embed=build_embed("Queue", "No queue entries matched that filter."))
+            return
+        lines = []
+        for entry in entries:
+            target = f"user `{entry['target_id']}`" if entry["target_id"] else "no target"
+            lines.append(
+                f"#{entry['id']} | {entry['kind']} | {entry['status']} | author `{entry['author_id']}` | {target}"
+            )
+        await send_interaction(
+            interaction,
+            embed=build_embed(
+                "Queue Entries",
+                "\n".join(lines),
+                fields=[
+                    ("Kind", kind, True),
+                    ("Status", status, True),
+                    ("Shown", str(len(entries)), True),
+                ],
+            ),
+        )
+
+    @queue.subcommand(description="Resolve or close a report or appeal entry")
+    async def resolve(
+        self,
+        interaction: nextcord.Interaction,
+        entry_id: int,
+        status: str = nextcord.SlashOption(
+            required=False,
+            default="resolved",
+            choices={
+                "Resolved": "resolved",
+                "Closed": "closed",
+            },
+        ),
+        note: str = nextcord.SlashOption(required=False, default="Handled by staff."),
+    ) -> None:
+        moderator = await require_moderator(interaction)
+        if moderator is None:
+            return
+        entry = self.bot.db.get_report(interaction.guild.id, entry_id)
+        if entry is None:
+            await send_interaction(interaction, content="That queue entry was not found.", ephemeral=True)
+            return
+        if not self.bot.db.update_report_status(interaction.guild.id, entry_id, status):
+            await send_interaction(interaction, content="That queue entry could not be updated.", ephemeral=True)
+            return
+        await self.bot.send_log(
+            interaction.guild,
+            title="Queue Entry Updated",
+            description=f"Queue entry #{entry_id} was marked as `{status}`.",
+            fields=[
+                ("Kind", entry["kind"], True),
+                ("Moderator", moderator.mention, True),
+                ("Note", note, False),
+            ],
+        )
+        await send_interaction(
+            interaction,
+            embed=build_embed(
+                "Queue Updated",
+                f"Marked {entry['kind']} entry #{entry_id} as `{status}`.",
+                fields=[("Note", note, False)],
+            ),
+        )
 
 
 def setup(bot: MemactAutoModBot) -> None:

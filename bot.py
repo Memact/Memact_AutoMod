@@ -371,4 +371,29 @@ class MemactAutoModBot(commands.Bot):
                     title="Temporary Ban Expired",
                     description=f"User ID `{action['user_id']}` has been unbanned automatically.",
                 )
+            elif action["action"] == "untimeout":
+                reason = action["payload"].get("reason", "Temporary timeout expired.")
+                member = guild.get_member(action["user_id"])
+                if member is None:
+                    try:
+                        member = await guild.fetch_member(action["user_id"])
+                    except nextcord.NotFound:
+                        member = None
+                    except (nextcord.Forbidden, nextcord.HTTPException):
+                        continue
+                if member is not None:
+                    try:
+                        await member.edit(timeout=None, reason=reason)
+                    except (nextcord.Forbidden, nextcord.HTTPException):
+                        continue
+                    await self.send_log(
+                        guild,
+                        title="Temporary Timeout Expired",
+                        description=f"{member.mention} had their timeout removed automatically.",
+                    )
+            else:
+                print(
+                    f"Unsupported scheduled action {action['action']!r} "
+                    f"for guild {action['guild_id']} and user {action['user_id']}; deleting it."
+                )
             self.db.delete_scheduled_action(action["id"])

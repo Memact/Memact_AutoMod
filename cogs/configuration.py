@@ -23,16 +23,30 @@ class ConfigurationCog(commands.Cog):
         if admin is None:
             return
         config = self.bot.db.get_guild_config(interaction.guild.id)
+
+        def format_role_list(role_ids: list[int]) -> str:
+            mentions = []
+            for role_id in role_ids:
+                role = interaction.guild.get_role(role_id)
+                mentions.append(role.mention if role is not None else f"`{role_id}`")
+            return ", ".join(mentions) if mentions else "None"
+
+        def format_channel(channel_id: int | None) -> str:
+            if not channel_id:
+                return "Not set"
+            channel = interaction.guild.get_channel(channel_id)
+            return channel.mention if channel is not None else f"`{channel_id}`"
+
         embed = build_embed(
             "Memact AutoMod Configuration",
             "Current server settings.",
             fields=[
-                ("Mod Roles", ", ".join(f"`{role_id}`" for role_id in config["mod_role_ids"]) or "None", False),
-                ("Admin Roles", ", ".join(f"`{role_id}`" for role_id in config["admin_role_ids"]) or "None", False),
-                ("Log Channel", f"`{config['log_channel_id']}`" if config["log_channel_id"] else "Not set", True),
-                ("Rules Channel", f"`{config['rules_channel_id']}`" if config["rules_channel_id"] else "Not set", True),
-                ("Report Channel", f"`{config['report_channel_id']}`" if config["report_channel_id"] else "Not set", True),
-                ("Appeal Channel", f"`{config['appeal_channel_id']}`" if config["appeal_channel_id"] else "Not set", True),
+                ("Mod Roles", format_role_list(config["mod_role_ids"]), False),
+                ("Admin Roles", format_role_list(config["admin_role_ids"]), False),
+                ("Log Channel", format_channel(config["log_channel_id"]), True),
+                ("Rules Channel", format_channel(config["rules_channel_id"]), True),
+                ("Report Channel", format_channel(config["report_channel_id"]), True),
+                ("Appeal Channel", format_channel(config["appeal_channel_id"]), True),
                 ("Raid Mode", "On" if config["raid_mode"] else "Off", True),
                 ("Min Account Age", f"{config['min_account_age_hours']} hours", True),
                 ("Warn Thresholds", f"Timeout {config['warn_timeout_threshold']} / Kick {config['warn_kick_threshold']} / Ban {config['warn_ban_threshold']}", False),

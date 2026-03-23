@@ -26,6 +26,7 @@ class AutomodCog(commands.Cog):
         self.spam_history: dict[tuple[int, int], deque[float]] = defaultdict(deque)
         self.repeat_history: dict[tuple[int, int], deque[tuple[float, str]]] = defaultdict(deque)
         self.blocked_word_cache: dict[int, list[tuple[str, re.Pattern[str]]]] = {}
+        self._last_history_cleanup_ts = 0.0
 
     def _invalidate_blocked_word_cache(self, guild_id: int) -> None:
         self.blocked_word_cache.pop(guild_id, None)
@@ -40,6 +41,29 @@ class AutomodCog(commands.Cog):
         ]
         self.blocked_word_cache[guild_id] = patterns
         return patterns
+
+    def _cleanup_history_cache(self, now_ts: float, *, spam_window_seconds: int, repeat_window_seconds: int) -> None:
+        if now_ts - self._last_history_cleanup_ts < 300:
+            return
+
+        for key, history in list(self.spam_history.items()):
+            while history and now_ts - history[0] > spam_window_seconds:
+                history.popleft()
+            if not history:
+                self.spam_history.pop(key, None)
+
+        for key, history in list(self.repeat_history.items()):
+            while history and now_ts - history[0][0] > repeat_window_seconds:
+                history.popleft()
+            if not history:
+                self.repeat_history.pop(key, None)
+
+        self._last_history_cleanup_ts = now_ts
+
+    def _clear_member_history(self, guild_id: int, user_id: int) -> None:
+        key = (guild_id, user_id)
+        self.spam_history.pop(key, None)
+        self.repeat_history.pop(key, None)
 
     async def _handle_violation(
         self,
@@ -74,12 +98,19 @@ class AutomodCog(commands.Cog):
         return len(letters), uppercase / len(letters)
 
     def _check_spam(self, guild_id: int, user_id: int, content: str, *, config: dict, now_ts: float) -> tuple[bool, str | None]:
+        self._cleanup_history_cache(
+            now_ts,
+            spam_window_seconds=config["spam_window_seconds"],
+            repeat_window_seconds=config["repeat_window_seconds"],
+        )
         key = (guild_id, user_id)
         if config["spam_filter_enabled"]:
             history = self.spam_history[key]
             history.append(now_ts)
             while history and now_ts - history[0] > config["spam_window_seconds"]:
                 history.popleft()
+            if not history:
+                self.spam_history.pop(key, None)
             if len(history) >= config["spam_threshold"]:
                 return True, "No spam"
 
@@ -89,6 +120,8 @@ class AutomodCog(commands.Cog):
             repeat_history.append((now_ts, normalized))
             while repeat_history and now_ts - repeat_history[0][0] > config["repeat_window_seconds"]:
                 repeat_history.popleft()
+            if not repeat_history:
+                self.repeat_history.pop(key, None)
             if normalized and sum(1 for _, value in repeat_history if value == normalized) >= config["repeat_threshold"]:
                 return True, "No spam"
 
@@ -197,13 +230,28 @@ class AutomodCog(commands.Cog):
             await member.kick(reason=reason)
         except (nextcord.Forbidden, nextcord.HTTPException):
             return
-        case_id = await self.bot.add_case(member.guild.id, member.id, (self.bot.user.id if self.bot.user else member.id), "kick", reason, metadata={"source": "join_screen"})
+        moderator_id = self.bot.user.id if self.bot.user is not None else self.bot.settings.application_id
+        if moderator_id is None:
+            return
+        case_id = await self.bot.add_case(member.guild.id, member.id, moderator_id, "kick", reason, metadata={"source": "join_screen"})
         await self.bot.send_log(
             member.guild,
             title="Join Screen Kick",
             description=f"{member.mention} was removed automatically on join.",
             fields=[("Case", str(case_id), True), ("Age Hours", f"{age_hours:.2f}", True), ("Reason", reason, False)],
         )
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: nextcord.Member) -> None:
+        self._clear_member_history(member.guild.id, member.id)
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: nextcord.Guild) -> None:
+        for key in [key for key in self.spam_history if key[0] == guild.id]:
+            self.spam_history.pop(key, None)
+        for key in [key for key in self.repeat_history if key[0] == guild.id]:
+            self.repeat_history.pop(key, None)
+        self.blocked_word_cache.pop(guild.id, None)
 
     @nextcord.slash_command(description="Automod configuration commands", guild_ids=COMMAND_GUILD_IDS)
     async def automod(self, interaction: nextcord.Interaction) -> None:
@@ -329,10 +377,11 @@ class AutomodCog(commands.Cog):
         try:
             imported_terms = await asyncio.to_thread(fetch_dataset_terms_sync, dataset)
         except Exception as error:
+            print(f"Dataset import failed for {dataset}: {type(error).__name__}: {error}")
             await interaction.followup.send(
                 embed=build_embed(
                     "Dataset Import Failed",
-                    f"Could not fetch the online dataset: `{type(error).__name__}`.",
+                    "Could not fetch or parse the selected online dataset. Please try again later.",
                 ),
                 ephemeral=True,
             )
