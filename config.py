@@ -29,6 +29,8 @@ DEFAULT_RULES = [
 class Settings:
     token: str
     database_path: str
+    stream_title: str
+    stream_url: str
     dev_guild_id: int | None = None
     application_id: int | None = None
 
@@ -83,10 +85,14 @@ def load_settings() -> Settings:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     guild_id_raw = os.getenv("MEMACT_GUILD_ID", "").strip()
     dev_guild_id = int(guild_id_raw) if guild_id_raw.isdigit() else None
+    stream_title = os.getenv("MEMACT_STREAM_TITLE", "Moderation").strip() or "Moderation"
+    stream_url = os.getenv("MEMACT_STREAM_URL", "https://twitch.tv/discord").strip() or "https://twitch.tv/discord"
 
     return Settings(
         token=token,
         database_path=str(database_path),
+        stream_title=stream_title,
+        stream_url=stream_url,
         dev_guild_id=dev_guild_id,
         application_id=get_application_id_from_token(token),
     )

@@ -28,6 +28,8 @@ excluded from the code license unless a file explicitly says otherwise. See
 3. Copy `.env.example` to `.env` and fill in `MEMACT_TOKEN`.
 4. Install dependencies with `pip install -r requirements.txt`.
 5. Run the bot with `python main.py`.
+6. Optional: set `MEMACT_STREAM_TITLE` and `MEMACT_STREAM_URL` to control the
+   streaming presence. Default title is `Moderation`.
 
 ## Railway Deployment
 
@@ -46,6 +48,8 @@ Recommended settings:
    - `MEMACT_GUILD_ID` (optional but recommended if this bot should stay locked
      to one server)
    - `MEMACT_DATABASE`
+   - `MEMACT_STREAM_TITLE` (optional)
+   - `MEMACT_STREAM_URL` (optional but required for streaming presence)
 6. Skip `Public Networking` unless you specifically want to expose the optional
    `/healthz` endpoint.
 

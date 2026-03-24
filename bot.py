@@ -67,6 +67,15 @@ class MemactAutoModBot(commands.Bot):
             print(f"Logged in as {self.user} ({self.user.id})")
             if self.keepalive_state is not None:
                 self.keepalive_state.set_status("ready", f"Connected as {self.user}.")
+        try:
+            await self.change_presence(
+                activity=nextcord.Streaming(
+                    name=self.settings.stream_title,
+                    url=self.settings.stream_url,
+                )
+            )
+        except Exception as error:
+            print(f"Failed to set streaming presence: {type(error).__name__}: {error}")
         print(f"Loaded {local_command_count} local application command groups.")
         if not self._commands_synced:
             try:
