@@ -85,7 +85,7 @@ def load_settings() -> Settings:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     guild_id_raw = os.getenv("MEMACT_GUILD_ID", "").strip()
     dev_guild_id = int(guild_id_raw) if guild_id_raw.isdigit() else None
-    stream_title = os.getenv("MEMACT_STREAM_TITLE", "Moderation").strip() or "Moderation"
+    stream_title = os.getenv("MEMACT_STREAM_TITLE", "Moderating Memact").strip() or "Moderating Memact"
     stream_url = os.getenv("MEMACT_STREAM_URL", "https://twitch.tv/discord").strip() or "https://twitch.tv/discord"
 
     return Settings(
