@@ -62,8 +62,6 @@ def _load_dotenv() -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
 
 
-def load_env() -> None:
-    _load_dotenv()
 
 
 def get_command_guild_ids() -> list[int] | None:
