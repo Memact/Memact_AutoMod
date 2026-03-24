@@ -29,7 +29,7 @@ excluded from the code license unless a file explicitly says otherwise. See
 4. Install dependencies with `pip install -r requirements.txt`.
 5. Run the bot with `python main.py`.
 6. Optional: set `MEMACT_STREAM_TITLE` and `MEMACT_STREAM_URL` to control the
-   streaming presence. Default title is `Moderating Memact`.
+   streaming presence. Default title is `Moderating this server`.
 
 ## Railway Deployment
 
