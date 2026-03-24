@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import csv
+import io
 import json
 import re
 from urllib.request import Request, urlopen
@@ -52,6 +54,18 @@ LIGHT_WORD_ALLOWLIST = {
     "hell",
     "piss",
     "shit",
+}
+
+LENIENT_DATASET_PRESETS = {
+    "mild_en": {
+        "label": "Mild English (Allowlist)",
+        "sources": [
+            {
+                "url": "https://huggingface.co/datasets/mmathys/profanity/resolve/main/profanity_en.csv",
+                "format": "csv_mild",
+            },
+        ],
+    },
 }
 
 SIMPLE_TERM_RE = re.compile(r"^[\w'-]+$", re.UNICODE)
@@ -121,6 +135,20 @@ def parse_dataset_terms(payload_text: str, data_format: str) -> list[str]:
         terms = [line.strip() for line in payload_text.splitlines() if line.strip()]
         return terms
 
+    if data_format == "csv_mild":
+        reader = csv.DictReader(io.StringIO(payload_text))
+        terms: list[str] = []
+        for row in reader:
+            if not row:
+                continue
+            severity = (row.get("severity_description") or "").strip().lower()
+            if severity != "mild":
+                continue
+            text = (row.get("text") or "").strip()
+            if text:
+                terms.append(text)
+        return terms
+
     raise ValueError("Unsupported blocked-word dataset format.")
 
 
@@ -143,4 +171,26 @@ def fetch_dataset_terms_sync(preset: str) -> list[str]:
     normalized = normalize_blocked_terms(all_terms)
     if not normalized:
         raise ValueError("The blocked-word dataset did not contain any terms.")
+    return normalized
+
+
+def fetch_lenient_terms_sync(preset: str) -> list[str]:
+    dataset = LENIENT_DATASET_PRESETS.get(preset)
+    if dataset is None:
+        raise ValueError("Unknown lenient-word dataset.")
+    all_terms: list[str] = []
+    for source in dataset["sources"]:
+        url = source["url"]
+        request = Request(
+            url,
+            headers={"User-Agent": "MemactAutoMod/1.0"},
+        )
+        with urlopen(request, timeout=20) as response:
+            payload_text = response.read().decode("utf-8")
+        terms = parse_dataset_terms(payload_text, source["format"])
+        if terms:
+            all_terms.extend(terms)
+    normalized = normalize_blocked_terms(all_terms)
+    if not normalized:
+        raise ValueError("The lenient-word dataset did not contain any terms.")
     return normalized

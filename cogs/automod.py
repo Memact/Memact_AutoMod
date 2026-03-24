@@ -11,7 +11,14 @@ from nextcord.ext import commands
 from bot import MemactAutoModBot
 from config import BOT_JOIN_ROLE_ID, COMMAND_GUILD_IDS, INTRO_CHANNEL_ID, MEMBER_JOIN_ROLE_ID, WELCOME_CHANNEL_ID
 from utils.checks import is_moderator_member, require_admin
-from utils.blocklist import DATASET_PRESETS, LIGHT_WORD_ALLOWLIST, compile_blocked_term_pattern, fetch_dataset_terms_sync
+from utils.blocklist import (
+    DATASET_PRESETS,
+    LENIENT_DATASET_PRESETS,
+    LIGHT_WORD_ALLOWLIST,
+    compile_blocked_term_pattern,
+    fetch_dataset_terms_sync,
+    fetch_lenient_terms_sync,
+)
 from utils.ui import build_embed, send_interaction
 
 
@@ -35,10 +42,12 @@ class AutomodCog(commands.Cog):
         cached = self.blocked_word_cache.get(guild_id)
         if cached is not None:
             return cached
+        lenient_words = set(self.bot.db.list_lenient_words(guild_id))
+        lenient_words.update(LIGHT_WORD_ALLOWLIST)
         patterns = [
             (term, compile_blocked_term_pattern(term))
             for term in self.bot.db.list_blocked_words(guild_id)
-            if term not in LIGHT_WORD_ALLOWLIST
+            if term not in lenient_words
         ]
         self.blocked_word_cache[guild_id] = patterns
         return patterns
@@ -358,6 +367,7 @@ class AutomodCog(commands.Cog):
             return
         config = self.bot.db.get_guild_config(interaction.guild.id)
         blocked_words = self.bot.db.list_blocked_words(interaction.guild.id)
+        lenient_words = self.bot.db.list_lenient_words(interaction.guild.id)
         await send_interaction(
             interaction,
             embed=build_embed(
@@ -371,6 +381,7 @@ class AutomodCog(commands.Cog):
                     ("Repeat Filter", "On" if config["repeat_filter_enabled"] else "Off", True),
                     ("Mention Filter", "On" if config["mention_filter_enabled"] else "Off", True),
                     ("Blocked Words", f"{len(blocked_words)} configured" if blocked_words else "None", False),
+                    ("Lenient Words", f"{len(lenient_words)} allowlisted" if lenient_words else "None", False),
                     ("Caps Threshold", f"{config['caps_ratio']:.0%} with minimum {config['caps_min_length']} letters", False),
                     ("Spam Threshold", f"{config['spam_threshold']} messages / {config['spam_window_seconds']}s", False),
                     ("Repeat Threshold", f"{config['repeat_threshold']} duplicates / {config['repeat_window_seconds']}s", False),
@@ -491,6 +502,9 @@ class AutomodCog(commands.Cog):
         for term in LIGHT_WORD_ALLOWLIST:
             if self.bot.db.remove_blocked_word(interaction.guild.id, term):
                 lenient_removed += 1
+        for term in self.bot.db.list_lenient_words(interaction.guild.id):
+            if self.bot.db.remove_blocked_word(interaction.guild.id, term):
+                lenient_removed += 1
         self._invalidate_blocked_word_cache(interaction.guild.id)
         total = self.bot.db.count_blocked_words(interaction.guild.id)
         label = DATASET_PRESETS[dataset]["label"]
@@ -504,6 +518,69 @@ class AutomodCog(commands.Cog):
                     ("Added", str(added), True),
                     ("Lenient Removed", str(lenient_removed), True),
                     ("Total Configured", str(total), True),
+                ],
+            ),
+            ephemeral=True,
+        )
+
+    @automod.subcommand(description="Import a lenient-word allowlist dataset")
+    async def import_lenient_dataset(
+        self,
+        interaction: nextcord.Interaction,
+        dataset: str = nextcord.SlashOption(
+            required=False,
+            default="mild_en",
+            choices={
+                "Mild English (Recommended)": "mild_en",
+            },
+        ),
+        mode: str = nextcord.SlashOption(
+            required=False,
+            default="merge",
+            choices={
+                "Merge (Recommended)": "merge",
+                "Replace Existing": "replace",
+            },
+        ),
+    ) -> None:
+        admin = await require_admin(interaction)
+        if admin is None:
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            imported_terms = await asyncio.to_thread(fetch_lenient_terms_sync, dataset)
+        except Exception as error:
+            print(f"Lenient dataset import failed for {dataset}: {type(error).__name__}: {error}")
+            await interaction.followup.send(
+                embed=build_embed(
+                    "Lenient Dataset Import Failed",
+                    "Could not fetch or parse the selected lenient dataset. Please try again later.",
+                ),
+                ephemeral=True,
+            )
+            return
+
+        removed = 0
+        if mode == "replace":
+            removed = self.bot.db.clear_lenient_words(interaction.guild.id)
+        added = self.bot.db.bulk_add_lenient_words(interaction.guild.id, imported_terms)
+        lenient_removed = 0
+        for term in imported_terms:
+            if self.bot.db.remove_blocked_word(interaction.guild.id, term):
+                lenient_removed += 1
+        self._invalidate_blocked_word_cache(interaction.guild.id)
+        total = len(self.bot.db.list_lenient_words(interaction.guild.id))
+        label = LENIENT_DATASET_PRESETS[dataset]["label"]
+        await interaction.followup.send(
+            embed=build_embed(
+                "Lenient Dataset Imported",
+                f"Imported allowlisted words from **{label}**.",
+                fields=[
+                    ("Mode", mode.title(), True),
+                    ("Removed", str(removed), True),
+                    ("Added", str(added), True),
+                    ("Removed From Blocklist", str(lenient_removed), True),
+                    ("Total Lenient", str(total), True),
                 ],
             ),
             ephemeral=True,
