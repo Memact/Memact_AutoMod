@@ -263,12 +263,15 @@ class AutomodCog(commands.Cog):
 
         return False, None
 
-    def _check_promotion(self, content: str) -> bool:
+    def _check_promotion(self, guild_id: int, content: str) -> bool:
         normalized = " ".join(content.lower().split())
+        promo_keywords = set(PROMO_KEYWORDS)
+        promo_keywords.update(self.bot.db.list_promo_keywords(guild_id))
+        multiword_keywords = [term for term in promo_keywords if " " in term]
         has_url = URL_RE.search(content) is not None
         if has_url:
-            return any(keyword in normalized for keyword in PROMO_KEYWORDS) or PROMO_PHRASE_RE.search(normalized) is not None
-        return PROMO_PHRASE_RE.search(normalized) is not None
+            return any(keyword in normalized for keyword in promo_keywords) or PROMO_PHRASE_RE.search(normalized) is not None
+        return PROMO_PHRASE_RE.search(normalized) is not None or any(term in normalized for term in multiword_keywords)
 
 
     @commands.Cog.listener()
@@ -314,7 +317,7 @@ class AutomodCog(commands.Cog):
                 )
                 return
 
-            if self._check_promotion(content):
+            if self._check_promotion(message.guild.id, content):
                 await self._handle_violation(
                     message,
                     rule_name="No unsolicited advertising",
@@ -430,6 +433,7 @@ class AutomodCog(commands.Cog):
         config = self.bot.db.get_guild_config(interaction.guild.id)
         blocked_words = self.bot.db.list_blocked_words(interaction.guild.id)
         lenient_words = self.bot.db.list_lenient_words(interaction.guild.id)
+        promo_keywords = self.bot.db.list_promo_keywords(interaction.guild.id)
         await send_interaction(
             interaction,
             embed=build_embed(
@@ -444,6 +448,7 @@ class AutomodCog(commands.Cog):
                     ("Mention Filter", "On" if config["mention_filter_enabled"] else "Off", True),
                     ("Blocked Words", f"{len(blocked_words)} configured" if blocked_words else "None", False),
                     ("Lenient Words", f"{len(lenient_words)} allowlisted" if lenient_words else "None", False),
+                    ("Promo Keywords", f"{len(promo_keywords)} configured" if promo_keywords else "None", False),
                     ("Caps Threshold", f"{config['caps_ratio']:.0%} with minimum {config['caps_min_length']} letters", False),
                     ("Spam Threshold", f"{config['spam_threshold']} messages / {config['spam_window_seconds']}s", False),
                     ("Repeat Threshold", f"{config['repeat_threshold']} duplicates / {config['repeat_window_seconds']}s", False),
@@ -643,6 +648,56 @@ class AutomodCog(commands.Cog):
                     ("Added", str(added), True),
                     ("Removed From Blocklist", str(lenient_removed), True),
                     ("Total Lenient", str(total), True),
+                ],
+            ),
+            ephemeral=True,
+        )
+
+    @automod.subcommand(description="Import a promotion keyword dataset")
+    async def import_promo_dataset(
+        self,
+        interaction: nextcord.Interaction,
+        mode: str = nextcord.SlashOption(
+            required=False,
+            default="merge",
+            choices={
+                "Merge (Recommended)": "merge",
+                "Replace Existing": "replace",
+            },
+        ),
+    ) -> None:
+        admin = await require_admin(interaction)
+        if admin is None:
+            return
+        await interaction.response.defer(ephemeral=True)
+        dataset_path = "data/promo_keywords.txt"
+        try:
+            with open(dataset_path, "r", encoding="utf-8") as handle:
+                terms = [line.strip() for line in handle.readlines() if line.strip()]
+        except OSError:
+            await interaction.followup.send(
+                embed=build_embed(
+                    "Promo Dataset Import Failed",
+                    "Could not read the bundled promotion keyword dataset.",
+                ),
+                ephemeral=True,
+            )
+            return
+
+        removed = 0
+        if mode == "replace":
+            removed = self.bot.db.clear_promo_keywords(interaction.guild.id)
+        added = self.bot.db.bulk_add_promo_keywords(interaction.guild.id, terms)
+        total = len(self.bot.db.list_promo_keywords(interaction.guild.id))
+        await interaction.followup.send(
+            embed=build_embed(
+                "Promo Dataset Imported",
+                "Imported bundled promotion keywords.",
+                fields=[
+                    ("Mode", mode.title(), True),
+                    ("Removed", str(removed), True),
+                    ("Added", str(added), True),
+                    ("Total Promo Keywords", str(total), True),
                 ],
             ),
             ephemeral=True,

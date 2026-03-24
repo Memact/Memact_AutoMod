@@ -121,6 +121,14 @@ class Database:
                     UNIQUE(guild_id, term)
                 );
 
+                CREATE TABLE IF NOT EXISTS promo_keywords (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    term TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(guild_id, term)
+                );
+
                 CREATE TABLE IF NOT EXISTS cases (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
@@ -483,6 +491,64 @@ class Database:
             before = self.connection.total_changes
             self.connection.executemany(
                 "INSERT OR IGNORE INTO lenient_words (guild_id, term, created_at) VALUES (?, ?, ?)",
+                rows,
+            )
+            self.connection.commit()
+            return int(self.connection.total_changes - before)
+
+    def add_promo_keyword(self, guild_id: int, term: str) -> bool:
+        self.ensure_guild(guild_id)
+        normalized = term.strip().lower()
+        if not normalized:
+            return False
+        with self._lock:
+            cursor = self.connection.execute(
+                "INSERT OR IGNORE INTO promo_keywords (guild_id, term, created_at) VALUES (?, ?, ?)",
+                (guild_id, normalized, utcnow_iso()),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+
+    def remove_promo_keyword(self, guild_id: int, term: str) -> bool:
+        self.ensure_guild(guild_id)
+        normalized = term.strip().lower()
+        with self._lock:
+            cursor = self.connection.execute(
+                "DELETE FROM promo_keywords WHERE guild_id = ? AND term = ?",
+                (guild_id, normalized),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+
+    def list_promo_keywords(self, guild_id: int) -> list[str]:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT term FROM promo_keywords WHERE guild_id = ? ORDER BY term ASC",
+                (guild_id,),
+            ).fetchall()
+        return [str(row["term"]) for row in rows]
+
+    def clear_promo_keywords(self, guild_id: int) -> int:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            cursor = self.connection.execute(
+                "DELETE FROM promo_keywords WHERE guild_id = ?",
+                (guild_id,),
+            )
+            self.connection.commit()
+            return int(cursor.rowcount)
+
+    def bulk_add_promo_keywords(self, guild_id: int, terms: list[str]) -> int:
+        self.ensure_guild(guild_id)
+        normalized_terms = normalize_blocked_terms(terms)
+        if not normalized_terms:
+            return 0
+        rows = [(guild_id, term, utcnow_iso()) for term in normalized_terms]
+        with self._lock:
+            before = self.connection.total_changes
+            self.connection.executemany(
+                "INSERT OR IGNORE INTO promo_keywords (guild_id, term, created_at) VALUES (?, ?, ?)",
                 rows,
             )
             self.connection.commit()
