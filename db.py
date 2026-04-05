@@ -196,9 +196,28 @@ class Database:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (guild_id, user_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS bluesky_feeds (
+                    guild_id INTEGER PRIMARY KEY,
+                    handle TEXT NOT NULL,
+                    channel_id INTEGER NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    last_post_uri TEXT,
+                    last_post_created_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
+            self._ensure_column_locked("bluesky_feeds", "last_post_created_at", "TEXT")
             self.connection.commit()
+
+    def _ensure_column_locked(self, table_name: str, column_name: str, column_sql: str) -> None:
+        rows = self.connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        existing = {str(row["name"]) for row in rows}
+        if column_name in existing:
+            return
+        self.connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
     def ensure_guild(self, guild_id: int) -> None:
         with self._lock:
@@ -261,6 +280,114 @@ class Database:
             )
             self._touch_guild(guild_id)
             self.connection.commit()
+
+    def save_bluesky_feed(
+        self,
+        guild_id: int,
+        *,
+        handle: str,
+        channel_id: int,
+        enabled: bool = True,
+        last_post_uri: str | None = None,
+        last_post_created_at: str | None = None,
+    ) -> None:
+        self.ensure_guild(guild_id)
+        normalized_handle = handle.strip().lstrip("@").lower()
+        if not normalized_handle:
+            raise ValueError("Bluesky handle cannot be empty.")
+        now = utcnow_iso()
+        with self._lock:
+            self.connection.execute(
+                """
+                INSERT INTO bluesky_feeds (
+                    guild_id, handle, channel_id, enabled, last_post_uri, last_post_created_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(guild_id) DO UPDATE SET
+                    handle = excluded.handle,
+                    channel_id = excluded.channel_id,
+                    enabled = excluded.enabled,
+                    last_post_uri = excluded.last_post_uri,
+                    last_post_created_at = excluded.last_post_created_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    guild_id,
+                    normalized_handle,
+                    channel_id,
+                    1 if enabled else 0,
+                    last_post_uri,
+                    last_post_created_at,
+                    now,
+                    now,
+                ),
+            )
+            self.connection.commit()
+
+    def get_bluesky_feed(self, guild_id: int) -> dict[str, Any] | None:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT * FROM bluesky_feeds WHERE guild_id = ?",
+                (guild_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data["enabled"] = bool(data["enabled"])
+        return data
+
+    def list_enabled_bluesky_feeds(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT * FROM bluesky_feeds WHERE enabled = 1 ORDER BY guild_id ASC",
+            ).fetchall()
+        feeds: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            data["enabled"] = bool(data["enabled"])
+            feeds.append(data)
+        return feeds
+
+    def set_bluesky_feed_enabled(self, guild_id: int, enabled: bool) -> bool:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE bluesky_feeds SET enabled = ?, updated_at = ? WHERE guild_id = ?",
+                (1 if enabled else 0, utcnow_iso(), guild_id),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+
+    def update_bluesky_feed_cursor(
+        self,
+        guild_id: int,
+        *,
+        last_post_uri: str | None,
+        last_post_created_at: str | None,
+    ) -> bool:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            cursor = self.connection.execute(
+                """
+                UPDATE bluesky_feeds
+                SET last_post_uri = ?, last_post_created_at = ?, updated_at = ?
+                WHERE guild_id = ?
+                """,
+                (last_post_uri, last_post_created_at, utcnow_iso(), guild_id),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+
+    def delete_bluesky_feed(self, guild_id: int) -> bool:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            cursor = self.connection.execute(
+                "DELETE FROM bluesky_feeds WHERE guild_id = ?",
+                (guild_id,),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
 
     def add_role_id(self, guild_id: int, column: str, role_id: int) -> None:
         if column not in ROLE_LIST_COLUMNS:

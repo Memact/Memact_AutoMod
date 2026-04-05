@@ -20,6 +20,7 @@ excluded from the code license unless a file explicitly says otherwise. See
 - rules management and rules embed posting
 - generic embed creation and reusable embed templates
 - member report and appeal flows
+- Bluesky relay with automatic posting to a fixed Discord channel and moderator-picked reposts for older posts
 
 ## Setup
 
@@ -30,6 +31,50 @@ excluded from the code license unless a file explicitly says otherwise. See
 5. Run the bot with `python main.py`.
 6. Optional: set `MEMACT_STREAM_TITLE` and `MEMACT_STREAM_URL` to control the
    streaming presence. Default title is `Moderating this server`.
+
+## Bluesky Relay
+
+This bot can mirror posts from one public Bluesky account into the fixed
+Discord channel `1490277253949558975`.
+
+### What it does
+
+- automatic posting for future Bluesky posts after a moderator picks the
+  account with a Discord slash command
+- moderator-only history picker for manually reposting older Bluesky posts
+  into the same fixed channel
+- durable sync state stored in SQLite so the bot can catch up on missed posts
+  after restarts or downtime
+
+### Setup
+
+1. Start the bot normally.
+2. Make sure the Discord server contains the text channel with ID
+   `1490277253949558975`.
+3. In Discord, run `/bluesky setup handle:<account>`.
+4. The bot saves the current latest Bluesky post as its sync point and starts
+   auto-posting only new posts from that moment onward.
+
+### Moderator commands
+
+- `/bluesky view`: show the selected account, relay status, fixed relay
+  channel, and last synced post
+- `/bluesky sync_now`: immediately catch up on posts that arrived while the
+  bot was offline
+- `/bluesky history`: open a Discord picker that lets moderators browse and
+  manually send older Bluesky posts into the relay channel
+- `/bluesky disable`: pause automatic posting
+- `/bluesky enable`: resume automatic posting
+- `/bluesky remove`: clear the saved Bluesky account configuration
+
+The relay uses Bluesky's public AppView HTTP endpoint, so no extra Bluesky
+credentials are required for read-only mirroring.
+
+### Persistence
+
+The catch-up state is stored in the same SQLite database as the rest of the
+bot's data. If you want the Bluesky relay to survive deploys and restarts,
+store `MEMACT_DATABASE` on persistent storage such as a Railway volume.
 
 ## Railway Deployment
 

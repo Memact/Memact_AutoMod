@@ -4,7 +4,7 @@ import nextcord
 from nextcord.ext import commands
 
 from bot import MemactAutoModBot
-from config import COMMAND_GUILD_IDS
+from config import BLUESKY_RELAY_CHANNEL_ID, COMMAND_GUILD_IDS
 from utils.checks import require_admin
 from utils.ui import build_embed, send_interaction
 
@@ -27,6 +27,7 @@ class ConfigurationCog(commands.Cog):
         if admin is None:
             return
         config = self.bot.db.get_guild_config(interaction.guild.id)
+        bluesky_feed = self.bot.db.get_bluesky_feed(interaction.guild.id)
 
         def format_role_list(role_ids: list[int]) -> str:
             mentions = []
@@ -41,6 +42,13 @@ class ConfigurationCog(commands.Cog):
             channel = interaction.guild.get_channel(channel_id)
             return channel.mention if channel is not None else f"`{channel_id}`"
 
+        def format_bluesky_feed() -> str:
+            if bluesky_feed is None:
+                return "Not configured"
+            status = "enabled" if bluesky_feed["enabled"] else "disabled"
+            channel = format_channel(BLUESKY_RELAY_CHANNEL_ID)
+            return f"`@{bluesky_feed['handle']}` -> {channel} ({status})"
+
         embed = build_embed(
             "Memact AutoMod Configuration",
             "Current server settings.",
@@ -51,6 +59,7 @@ class ConfigurationCog(commands.Cog):
                 ("Rules Channel", format_channel(config["rules_channel_id"]), True),
                 ("Report Channel", format_channel(config["report_channel_id"]), True),
                 ("Appeal Channel", format_channel(config["appeal_channel_id"]), True),
+                ("Bluesky Relay", format_bluesky_feed(), False),
                 ("Raid Mode", "On" if config["raid_mode"] else "Off", True),
                 ("Min Account Age", f"{config['min_account_age_hours']} hours", True),
                 ("Warn Thresholds", f"Timeout {config['warn_timeout_threshold']} / Kick {config['warn_kick_threshold']} / Ban {config['warn_ban_threshold']}", False),

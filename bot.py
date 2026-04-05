@@ -45,6 +45,7 @@ class MemactAutoModBot(commands.Bot):
             "cogs.rules",
             "cogs.embed_tools",
             "cogs.community",
+            "cogs.bluesky",
         ):
             self.load_extension(extension)
         self.add_all_application_commands()
