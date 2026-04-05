@@ -1,6 +1,27 @@
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/WjKDeWuGy5)
+
 # Memact AutoMod
 
-Memact AutoMod is a `nextcord` moderation bot for a private Discord server.
+Memact AutoMod is a `nextcord`-powered Discord management bot for the Memact
+server. It combines moderation tools, automod protection, queue and ticket
+workflows, embed utilities, and optional Bluesky relay posting in one long
+running bot service.
+
+## Overview
+
+This repository is focused on running a practical all-in-one server bot rather
+than a single-feature integration. The core of the bot is moderation and
+community operations:
+
+- slash-command moderation for bans, kicks, timeouts, warnings, purge, locks,
+  slowmode, nicknames, and role tools
+- automod protections for spam, duplicate messages, invite links, blocked
+  words, caps abuse, mention flooding, and raid-mode responses
+- SQLite-backed case history, warning points, scheduled actions, queue entries,
+  and server configuration
+- rules posting, reusable embed templates, and staff-facing logging
+- member reports, appeals, and ticket flows with abuse protection
+- optional Bluesky relay posting for announcements and social updates
 
 ## License
 
@@ -14,13 +35,17 @@ excluded from the code license unless a file explicitly says otherwise. See
 
 ## Features
 
-- moderation slash commands for bans, kicks, timeouts, warnings, purge, locks, slowmode, nicknames, and role tools
-- SQLite-backed case history, warning points, temp-ban scheduling, and server config
-- automod for spam, duplicate messages, invite links, blocked words, caps, and mention flooding
+- moderation slash commands for bans, kicks, timeouts, warnings, purge, locks,
+  slowmode, nicknames, and role tools
+- SQLite-backed case history, warning points, temp-ban scheduling, and server
+  config
+- automod for spam, duplicate messages, invite links, blocked words, caps, and
+  mention flooding
 - rules management and rules embed posting
 - generic embed creation and reusable embed templates
-- member report and appeal flows
-- Bluesky relay with automatic posting to a fixed Discord channel and moderator-picked reposts for older posts
+- member report, appeal, and ticket flows
+- optional Bluesky relay with automatic posting to a fixed Discord channel and
+  moderator-picked reposts for older posts
 
 ## Setup
 
@@ -34,17 +59,8 @@ excluded from the code license unless a file explicitly says otherwise. See
 
 ## Bluesky Relay
 
-This bot can mirror posts from one public Bluesky account into the fixed
-Discord channel `1490277253949558975`.
-
-### What it does
-
-- automatic posting for future Bluesky posts after a moderator picks the
-  account with a Discord slash command
-- moderator-only history picker for manually reposting older Bluesky posts
-  into the same fixed channel
-- durable sync state stored in SQLite so the bot can catch up on missed posts
-  after restarts or downtime
+The Bluesky relay is optional. When enabled, the bot can mirror posts from one
+public Bluesky account into the fixed Discord channel `1490277253949558975`.
 
 ### Setup
 
