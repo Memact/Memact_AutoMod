@@ -1,0 +1,21 @@
+name: Redeploy to JustRunMyApp
+
+on:
+  schedule:
+    - cron: "0 */40 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push to JustRunMyApp remote
+        run: |
+          git remote add jrnm "${{ secrets.JRNM_GIT_URL }}"
+          git push jrnm HEAD:deploy --force
