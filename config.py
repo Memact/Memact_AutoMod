@@ -23,6 +23,8 @@ APPEAL_MIN_LENGTH = 30
 TICKET_MIN_LENGTH = 20
 BLUESKY_POLL_SECONDS = 300
 BLUESKY_RELAY_CHANNEL_ID = 1490277253949558975
+DEFAULT_BACKUP_INTERVAL_HOURS = 12
+DEFAULT_BACKUP_RETENTION = 14
 
 DUPLICATE_WINDOW_SECONDS = 3600
 ABUSE_STRIKE_WINDOW_SECONDS = 900
@@ -45,6 +47,9 @@ DEFAULT_RULES = [
 class Settings:
     token: str
     database_path: str
+    backup_dir: str
+    backup_interval_hours: int
+    backup_retention: int
     stream_title: str
     stream_url: str
     dev_guild_id: int | None = None
@@ -101,6 +106,15 @@ def load_settings() -> Settings:
     if not database_path.is_absolute():
         database_path = BASE_DIR / database_path
     database_path.parent.mkdir(parents=True, exist_ok=True)
+    backup_dir_raw = os.getenv("MEMACT_BACKUP_DIR", "").strip()
+    backup_dir = Path(backup_dir_raw).expanduser() if backup_dir_raw else database_path.parent / "backups"
+    if not backup_dir.is_absolute():
+        backup_dir = BASE_DIR / backup_dir
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_interval_raw = os.getenv("MEMACT_BACKUP_INTERVAL_HOURS", str(DEFAULT_BACKUP_INTERVAL_HOURS)).strip()
+    backup_retention_raw = os.getenv("MEMACT_BACKUP_RETENTION", str(DEFAULT_BACKUP_RETENTION)).strip()
+    backup_interval_hours = int(backup_interval_raw) if backup_interval_raw.isdigit() else DEFAULT_BACKUP_INTERVAL_HOURS
+    backup_retention = int(backup_retention_raw) if backup_retention_raw.isdigit() else DEFAULT_BACKUP_RETENTION
     guild_id_raw = os.getenv("MEMACT_GUILD_ID", "").strip()
     dev_guild_id = int(guild_id_raw) if guild_id_raw.isdigit() else None
     stream_title = os.getenv("MEMACT_STREAM_TITLE", "Moderating this server").strip() or "Moderating this server"
@@ -109,6 +123,9 @@ def load_settings() -> Settings:
     return Settings(
         token=token,
         database_path=str(database_path),
+        backup_dir=str(backup_dir),
+        backup_interval_hours=max(1, backup_interval_hours),
+        backup_retention=max(1, backup_retention),
         stream_title=stream_title,
         stream_url=stream_url,
         dev_guild_id=dev_guild_id,

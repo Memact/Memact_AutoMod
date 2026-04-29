@@ -17,6 +17,8 @@ community operations:
   slowmode, nicknames, and role tools
 - automod protections for spam, duplicate messages, invite links, blocked
   words, caps abuse, mention flooding, and raid-mode responses
+- security guardrails for anti-nuke detection, audit logging, and SQLite
+  backups
 - startup seeding for bundled and curated automod datasets after deploys or
   restarts
 - SQLite-backed case history, warning points, scheduled actions, queue entries,
@@ -43,6 +45,11 @@ excluded from the code license unless a file explicitly says otherwise. See
   config
 - automod for spam, duplicate messages, invite links, blocked words, caps, and
   mention flooding
+- anti-nuke protection for destructive server bursts such as mass bans, kicks,
+  channel deletes, and role deletes
+- richer audit logging for message edits/deletes, role changes, channel
+  changes, bans, unbans, and kicks
+- automatic and manual SQLite backups with retention controls
 - rules management and rules embed posting
 - generic embed creation and reusable embed templates
 - member report, appeal, and ticket flows
@@ -53,10 +60,13 @@ excluded from the code license unless a file explicitly says otherwise. See
 
 1. Create a Discord bot in the Discord developer portal.
 2. Enable the `SERVER MEMBERS INTENT` and `MESSAGE CONTENT INTENT`.
-3. Copy `.env.example` to `.env` and fill in `MEMACT_TOKEN`.
-4. Install dependencies with `pip install -r requirements.txt`.
-5. Run the bot with `python main.py`.
-6. Optional: set `MEMACT_STREAM_TITLE` and `MEMACT_STREAM_URL` to control the
+3. Give the bot the permissions it needs for moderation and safety features,
+   including View Audit Log, Moderate Members, Manage Messages, Kick Members,
+   Ban Members, Manage Roles, and Manage Channels.
+4. Copy `.env.example` to `.env` and fill in `MEMACT_TOKEN`.
+5. Install dependencies with `pip install -r requirements.txt`.
+6. Run the bot with `python main.py`.
+7. Optional: set `MEMACT_STREAM_TITLE` and `MEMACT_STREAM_URL` to control the
    streaming presence. Default title is `Moderating this server`.
 
 ## Bluesky Relay
@@ -117,6 +127,9 @@ Recommended settings:
    - `MEMACT_DATABASE`
    - `MEMACT_STREAM_TITLE` (optional)
    - `MEMACT_STREAM_URL` (optional but required for streaming presence)
+   - `MEMACT_BACKUP_DIR` (optional, recommended on persistent storage)
+   - `MEMACT_BACKUP_INTERVAL_HOURS` (optional, default `12`)
+   - `MEMACT_BACKUP_RETENTION` (optional, default `14`)
 6. Start the app and watch the JustRunMy.App logs until the bot prints that it
    logged in and synced commands.
 
@@ -131,6 +144,25 @@ Important JustRunMy.App notes:
 - For durable SQLite data, set `MEMACT_DATABASE` to a path that lives on
   persistent app storage. This preserves moderation cases, queue state, and
   Bluesky sync cursors across restarts and Git deploys.
+- For defense in depth, set `MEMACT_BACKUP_DIR` to persistent app storage too.
+  The bot automatically creates SQLite backups and keeps the latest configured
+  number of backup files.
+
+## Security And Backups
+
+Memact AutoMod includes built-in safety controls that follow the same
+SQLite-backed configuration style as the rest of the bot.
+
+- `/security view`: show anti-nuke, audit logging, and backup status
+- `/security settings`: tune anti-nuke thresholds, audit logs, and the master
+  security switch
+- `/security backup_create`: create an immediate SQLite backup
+- `/security backup_list`: show recent backup files
+
+Anti-nuke protection watches for bursts of destructive manual server actions.
+If one actor crosses the configured threshold, the bot enables raid mode, logs
+a security case, and attempts to timeout the actor when Discord permissions and
+role hierarchy allow it.
 
 The included `Dockerfile` is ready for JustRunMy.App and other Docker-based
 hosts.

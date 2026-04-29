@@ -35,6 +35,13 @@ CONFIG_COLUMNS = {
     "repeat_threshold",
     "repeat_window_seconds",
     "raid_mode",
+    "security_enabled",
+    "antinuke_enabled",
+    "antinuke_threshold",
+    "antinuke_window_seconds",
+    "antinuke_timeout_minutes",
+    "audit_message_logs_enabled",
+    "audit_server_logs_enabled",
 }
 
 ROLE_LIST_COLUMNS = {"mod_role_ids", "admin_role_ids"}
@@ -91,6 +98,13 @@ class Database:
                     repeat_threshold INTEGER NOT NULL DEFAULT 3,
                     repeat_window_seconds INTEGER NOT NULL DEFAULT 90,
                     raid_mode INTEGER NOT NULL DEFAULT 0,
+                    security_enabled INTEGER NOT NULL DEFAULT 1,
+                    antinuke_enabled INTEGER NOT NULL DEFAULT 1,
+                    antinuke_threshold INTEGER NOT NULL DEFAULT 4,
+                    antinuke_window_seconds INTEGER NOT NULL DEFAULT 120,
+                    antinuke_timeout_minutes INTEGER NOT NULL DEFAULT 60,
+                    audit_message_logs_enabled INTEGER NOT NULL DEFAULT 1,
+                    audit_server_logs_enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -207,8 +221,28 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS security_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    actor_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    target_id INTEGER,
+                    details TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
                 """
             )
+            for column_name, column_sql in (
+                ("security_enabled", "INTEGER NOT NULL DEFAULT 1"),
+                ("antinuke_enabled", "INTEGER NOT NULL DEFAULT 1"),
+                ("antinuke_threshold", "INTEGER NOT NULL DEFAULT 4"),
+                ("antinuke_window_seconds", "INTEGER NOT NULL DEFAULT 120"),
+                ("antinuke_timeout_minutes", "INTEGER NOT NULL DEFAULT 60"),
+                ("audit_message_logs_enabled", "INTEGER NOT NULL DEFAULT 1"),
+                ("audit_server_logs_enabled", "INTEGER NOT NULL DEFAULT 1"),
+            ):
+                self._ensure_column_locked("guild_config", column_name, column_sql)
             self._ensure_column_locked("bluesky_feeds", "last_post_created_at", "TEXT")
             self.connection.commit()
 
@@ -265,9 +299,97 @@ class Database:
             "repeat_filter_enabled",
             "mention_filter_enabled",
             "raid_mode",
+            "security_enabled",
+            "antinuke_enabled",
+            "audit_message_logs_enabled",
+            "audit_server_logs_enabled",
         ):
             data[key] = bool(data[key])
         return data
+
+    def create_backup(self, destination_path: str) -> str:
+        destination = Path(destination_path).expanduser()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            backup_connection = sqlite3.connect(str(destination))
+            try:
+                self.connection.backup(backup_connection)
+            finally:
+                backup_connection.close()
+        return str(destination)
+
+    def add_security_event(
+        self,
+        guild_id: int,
+        actor_id: int,
+        action: str,
+        *,
+        target_id: int | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> int:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            cursor = self.connection.execute(
+                """
+                INSERT INTO security_events (guild_id, actor_id, action, target_id, details, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    guild_id,
+                    actor_id,
+                    action,
+                    target_id,
+                    json.dumps(details or {}),
+                    utcnow_iso(),
+                ),
+            )
+            self.connection.commit()
+            return int(cursor.lastrowid)
+
+    def count_recent_security_events(
+        self,
+        guild_id: int,
+        actor_id: int,
+        *,
+        actions: list[str],
+        since_iso: str,
+    ) -> int:
+        if not actions:
+            return 0
+        placeholders = ",".join("?" for _ in actions)
+        with self._lock:
+            row = self.connection.execute(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM security_events
+                WHERE guild_id = ?
+                  AND actor_id = ?
+                  AND action IN ({placeholders})
+                  AND created_at >= ?
+                """,
+                (guild_id, actor_id, *actions, since_iso),
+            ).fetchone()
+        return int(row["count"] if row is not None else 0)
+
+    def list_recent_security_events(self, guild_id: int, limit: int = 10) -> list[dict[str, Any]]:
+        self.ensure_guild(guild_id)
+        with self._lock:
+            rows = self.connection.execute(
+                """
+                SELECT *
+                FROM security_events
+                WHERE guild_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (guild_id, limit),
+            ).fetchall()
+        events: list[dict[str, Any]] = []
+        for row in rows:
+            event = dict(row)
+            event["details"] = json.loads(event["details"] or "{}")
+            events.append(event)
+        return events
 
     def set_config_value(self, guild_id: int, column: str, value: Any) -> None:
         if column not in CONFIG_COLUMNS:

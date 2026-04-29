@@ -60,6 +60,12 @@ class ConfigurationCog(commands.Cog):
                 ("Report Channel", format_channel(config["report_channel_id"]), True),
                 ("Appeal Channel", format_channel(config["appeal_channel_id"]), True),
                 ("Bluesky Relay", format_bluesky_feed(), False),
+                (
+                    "Security",
+                    f"Anti-nuke {'on' if config['antinuke_enabled'] else 'off'} / "
+                    f"Audit logs {'on' if config['audit_server_logs_enabled'] else 'off'}",
+                    False,
+                ),
                 ("Raid Mode", "On" if config["raid_mode"] else "Off", True),
                 ("Min Account Age", f"{config['min_account_age_hours']} hours", True),
                 ("Warn Thresholds", f"Timeout {config['warn_timeout_threshold']} / Kick {config['warn_kick_threshold']} / Ban {config['warn_ban_threshold']}", False),

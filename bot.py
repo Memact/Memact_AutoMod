@@ -42,6 +42,7 @@ class MemactAutoModBot(commands.Bot):
             "cogs.moderation",
             "cogs.configuration",
             "cogs.automod",
+            "cogs.safety",
             "cogs.rules",
             "cogs.embed_tools",
             "cogs.community",
