@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from datetime import timedelta
+from pathlib import Path
 import asyncio
 import re
 
@@ -71,6 +72,9 @@ PROMO_PHRASE_RE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+PROMO_DATASET_PATH = Path(__file__).resolve().parent.parent / "data" / "promo_keywords.txt"
+
+
 class AutomodCog(commands.Cog):
     def __init__(self, bot: MemactAutoModBot) -> None:
         self.bot = bot
@@ -78,6 +82,69 @@ class AutomodCog(commands.Cog):
         self.repeat_history: dict[tuple[int, int], deque[tuple[float, str]]] = defaultdict(deque)
         self.blocked_word_cache: dict[int, list[tuple[str, re.Pattern[str]]]] = {}
         self._last_history_cleanup_ts = 0.0
+        self._dataset_seed_task: asyncio.Task | None = None
+        self._dataset_seed_started = False
+
+    def cog_unload(self) -> None:
+        if self._dataset_seed_task is not None:
+            self._dataset_seed_task.cancel()
+
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        if self._dataset_seed_started:
+            return
+        self._dataset_seed_started = True
+        self._dataset_seed_task = asyncio.create_task(
+            self._seed_startup_datasets(),
+            name="memact-automod-dataset-seed",
+        )
+
+    def _load_promo_dataset_terms(self) -> list[str]:
+        with PROMO_DATASET_PATH.open("r", encoding="utf-8") as handle:
+            return [line.strip() for line in handle.readlines() if line.strip()]
+
+    async def _seed_startup_datasets(self) -> None:
+        await self.bot.wait_until_ready()
+        guild_ids = [guild.id for guild in self.bot.guilds if self.bot.is_allowed_guild_id(guild.id)]
+        if not guild_ids:
+            return
+
+        blocked_terms: list[str] = []
+        lenient_terms: list[str] = []
+        promo_terms: list[str] = []
+
+        try:
+            blocked_terms = await asyncio.to_thread(fetch_dataset_terms_sync, "strong_en")
+        except Exception as error:
+            print(f"Startup blocked-word dataset seed failed: {type(error).__name__}: {error}")
+
+        try:
+            lenient_terms = await asyncio.to_thread(fetch_lenient_terms_sync, "mild_en")
+        except Exception as error:
+            print(f"Startup lenient-word dataset seed failed: {type(error).__name__}: {error}")
+
+        try:
+            promo_terms = await asyncio.to_thread(self._load_promo_dataset_terms)
+        except OSError as error:
+            print(f"Startup promo keyword dataset seed failed: {type(error).__name__}: {error}")
+
+        for guild_id in guild_ids:
+            added_blocked = self.bot.db.bulk_add_blocked_words(guild_id, blocked_terms) if blocked_terms else 0
+            added_lenient = self.bot.db.bulk_add_lenient_words(guild_id, lenient_terms) if lenient_terms else 0
+            removed_lenient_from_blocklist = 0
+            for term in LIGHT_WORD_ALLOWLIST:
+                if self.bot.db.remove_blocked_word(guild_id, term):
+                    removed_lenient_from_blocklist += 1
+            for term in self.bot.db.list_lenient_words(guild_id):
+                if self.bot.db.remove_blocked_word(guild_id, term):
+                    removed_lenient_from_blocklist += 1
+            added_promo = self.bot.db.bulk_add_promo_keywords(guild_id, promo_terms) if promo_terms else 0
+            self._invalidate_blocked_word_cache(guild_id)
+            print(
+                "Startup datasets seeded for guild "
+                f"{guild_id}: blocked +{added_blocked}, lenient +{added_lenient}, "
+                f"blocked lenient removed {removed_lenient_from_blocklist}, promo +{added_promo}."
+            )
 
     def _invalidate_blocked_word_cache(self, guild_id: int) -> None:
         self.blocked_word_cache.pop(guild_id, None)

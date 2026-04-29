@@ -17,6 +17,8 @@ community operations:
   slowmode, nicknames, and role tools
 - automod protections for spam, duplicate messages, invite links, blocked
   words, caps abuse, mention flooding, and raid-mode responses
+- startup seeding for bundled and curated automod datasets after deploys or
+  restarts
 - SQLite-backed case history, warning points, scheduled actions, queue entries,
   and server configuration
 - rules posting, reusable embed templates, and staff-facing logging
@@ -69,7 +71,8 @@ public Bluesky account into the fixed Discord channel `1490277253949558975`.
    `1490277253949558975`.
 3. In Discord, run `/bluesky setup handle:<account>`.
 4. The bot saves the current latest Bluesky post as its sync point and starts
-   auto-posting only new posts from that moment onward.
+   auto-posting only new posts from that moment onward. The relay checks for
+   new posts every five minutes.
 
 ### Moderator commands
 
