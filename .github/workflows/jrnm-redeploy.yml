@@ -2,7 +2,7 @@ name: Redeploy to JustRunMyApp
 
 on:
   schedule:
-    - cron: "0 */40 * * *"
+    - cron: "0 */12 * * *"
   workflow_dispatch:
 
 permissions:
