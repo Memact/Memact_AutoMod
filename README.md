@@ -32,11 +32,6 @@ community operations:
 This repository's source code is open source under the MIT license. See
 [LICENSE](LICENSE).
 
-Memact branding and assets are not open source. The `Memact` name, logos,
-icons, artwork, banners, screenshots, and other Memact-owned brand assets are
-excluded from the code license unless a file explicitly says otherwise. See
-[NOTICE](NOTICE) and [BRANDING.md](BRANDING.md).
-
 ## Features
 
 - moderation slash commands for bans, kicks, timeouts, warnings, purge, locks,
